@@ -1,0 +1,124 @@
+
+name: Build Apex OS APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify source ZIP
+        shell: bash
+        run: |
+          if [ ! -f "Apex OS.zip" ]; then
+            echo "ERROR: Apex OS.zip was not found in the repository root."
+            echo "Upload the ZIP to the same level as this workflow."
+            exit 1
+          fi
+
+      - name: Extract Apex OS project
+        shell: bash
+        run: |
+          unzip -q "Apex OS.zip" -d source
+          if [ ! -f "source/Apex OS/package.json" ]; then
+            echo "ERROR: Could not find package.json inside the ZIP."
+            echo "Expected path: Apex OS/package.json"
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: |
+            platform-tools
+            platforms;android-36
+            build-tools;36.0.0
+
+      - name: Install project dependencies
+        working-directory: source/Apex OS
+        run: npm install --no-audit --no-fund
+
+      - name: Prepare web assets
+        working-directory: source/Apex OS
+        shell: bash
+        run: |
+          set -e
+          rm -rf www
+          mkdir -p www
+
+          for file in \
+            index.html \
+            styles.css \
+            app.js \
+            auth-gate.js \
+            sync-client.js \
+            supabase-config.js \
+            source-project-details.js \
+            university-admissions-source-data.js \
+            manifest.webmanifest
+          do
+            if [ ! -f "$file" ]; then
+              echo "ERROR: Required project file missing: $file"
+              exit 1
+            fi
+            cp "$file" www/
+          done
+
+      - name: Configure Capacitor Android
+        working-directory: source/Apex OS
+        run: npx cap add android
+
+      - name: Sync Android project
+        working-directory: source/Apex OS
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: source/Apex OS
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+
+      - name: Verify APK
+        working-directory: source/Apex OS
+        shell: bash
+        run: |
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          if [ ! -s "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+          ls -lh "$APK"
+
+      - name: Upload APK as ZIP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Apex-OS-debug-apk
+          path: source/Apex OS/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          compression-level: 6
+          retention-days: 14
