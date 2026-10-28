@@ -50,13 +50,15 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Set up Android SDK
+            - name: Set up Android SDK
         uses: android-actions/setup-android@v4
-        with:
-          packages: |
-            platform-tools
-            platforms;android-36
-            build-tools;36.0.0
+
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Install project dependencies
         working-directory: source/Apex OS
