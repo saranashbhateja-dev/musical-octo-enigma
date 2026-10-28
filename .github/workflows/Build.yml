@@ -24,20 +24,23 @@ jobs:
         shell: bash
         run: |
           if [ ! -f "Apex OS.zip" ]; then
-            echo "ERROR: Apex OS.zip was not found in the repository root."
-            echo "Upload the ZIP to the same level as this workflow."
+            echo "ERROR: Apex OS.zip is missing from the repository root."
+            echo "Check the exact uploaded ZIP filename."
             exit 1
           fi
 
-      - name: Extract Apex OS project
+      - name: Extract project
         shell: bash
         run: |
           unzip -q "Apex OS.zip" -d source
-          if [ ! -f "source/Apex OS/package.json" ]; then
-            echo "ERROR: Could not find package.json inside the ZIP."
-            echo "Expected path: Apex OS/package.json"
+          PROJECT="$(find source -type f -name package.json -print -quit)"
+          if [ -z "$PROJECT" ]; then
+            echo "ERROR: No package.json found inside the ZIP."
+            find source -maxdepth 3 -type f | head -80
             exit 1
           fi
+          echo "PROJECT_DIR=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
+          echo "Found project at: $(dirname "$PROJECT")"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -50,26 +53,27 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-            - name: Set up Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
       - name: Accept Android SDK licenses
+        shell: bash
         run: yes | sdkmanager --licenses
 
       - name: Install Android SDK packages
+        shell: bash
         run: |
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
 
       - name: Install project dependencies
-        working-directory: source/Apex OS
+        working-directory: ${{ env.PROJECT_DIR }}
         run: npm install --no-audit --no-fund
 
       - name: Prepare web assets
-        working-directory: source/Apex OS
+        working-directory: ${{ env.PROJECT_DIR }}
         shell: bash
         run: |
           set -e
-          rm -rf www
           mkdir -p www
 
           for file in \
@@ -84,43 +88,36 @@ jobs:
             manifest.webmanifest
           do
             if [ ! -f "$file" ]; then
-              echo "ERROR: Required project file missing: $file"
+              echo "ERROR: Required file missing: $file"
               exit 1
             fi
             cp "$file" www/
           done
 
-      - name: Configure Capacitor Android
-        working-directory: source/Apex OS
-        run: npx cap add android
+      - name: Add Android platform if needed
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
 
-      - name: Sync Android project
-        working-directory: source/Apex OS
+      - name: Sync Capacitor
+        working-directory: ${{ env.PROJECT_DIR }}
         run: npx cap sync android
 
       - name: Build debug APK
-        working-directory: source/Apex OS
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
         run: |
           cd android
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
 
-      - name: Verify APK
-        working-directory: source/Apex OS
-        shell: bash
-        run: |
-          APK="android/app/build/outputs/apk/debug/app-debug.apk"
-          if [ ! -s "$APK" ]; then
-            echo "ERROR: APK was not generated."
-            exit 1
-          fi
-          ls -lh "$APK"
-
-      - name: Upload APK as ZIP artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: Apex-OS-debug-apk
-          path: source/Apex OS/android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
-          compression-level: 6
           retention-days: 14
