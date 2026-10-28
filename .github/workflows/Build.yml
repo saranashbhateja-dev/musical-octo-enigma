@@ -26,6 +26,7 @@ jobs:
           if [ ! -f "Apex OS.zip" ]; then
             echo "ERROR: Apex OS.zip is missing from the repository root."
             echo "Check the exact uploaded ZIP filename."
+            ls -la
             exit 1
           fi
 
@@ -34,18 +35,21 @@ jobs:
         run: |
           unzip -q "Apex OS.zip" -d source
           PROJECT="$(find source -type f -name package.json -print -quit)"
+
           if [ -z "$PROJECT" ]; then
             echo "ERROR: No package.json found inside the ZIP."
-            find source -maxdepth 3 -type f | head -80
+            find source -maxdepth 4 -type f | head -100
             exit 1
           fi
-          echo "PROJECT_DIR=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
-          echo "Found project at: $(dirname "$PROJECT")"
+
+          PROJECT_DIR="$(dirname "$PROJECT")"
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          echo "Found project at: $PROJECT_DIR"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: "22"
 
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -56,12 +60,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-            - name: Accept Android SDK licenses
+      - name: Accept Android SDK licenses
         shell: bash
         run: |
           set +o pipefail
           yes | sdkmanager --licenses
-        run: yes | sdkmanager --licenses
 
       - name: Install Android SDK packages
         shell: bash
@@ -117,7 +120,18 @@ jobs:
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
 
-      - name: Upload APK
+      - name: Verify APK
+        working-directory: ${{ env.PROJECT_DIR }}
+        shell: bash
+        run: |
+          APK="android/app/build/outputs/apk/debug/app-debug.apk"
+          if [ ! -s "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+          ls -lh "$APK"
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: Apex-OS-debug-apk
